@@ -78,6 +78,22 @@ func getJSON(t *testing.T, url string, v any) *http.Response {
 	return resp
 }
 
+func TestHealth(t *testing.T) {
+	db := dbtest.New(t)
+
+	srv := httptest.NewServer(api.NewRouter(db))
+	defer srv.Close()
+
+	var got map[string]string
+	resp := getJSON(t, srv.URL+"/health", &got)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if got["status"] != "ok" {
+		t.Errorf("status field = %q, want ok", got["status"])
+	}
+}
+
 func TestListPatients(t *testing.T) {
 	db := dbtest.New(t)
 	seedData(t, db)

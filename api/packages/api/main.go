@@ -18,10 +18,24 @@ type handler struct {
 func NewRouter(db *gorm.DB) http.Handler {
 	h := &handler{db: db}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", h.health)
 	mux.HandleFunc("GET /patients", h.listPatients)
 	mux.HandleFunc("GET /samples", h.listSamples)
 	mux.HandleFunc("GET /samples/{id}", h.getSample)
 	return withCORS(mux)
+}
+
+func (h *handler) health(w http.ResponseWriter, r *http.Request) {
+	sqlDB, err := h.db.DB()
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "error", "error": err.Error()})
+		return
+	}
+	if err := sqlDB.PingContext(r.Context()); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "error", "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func withCORS(next http.Handler) http.Handler {
