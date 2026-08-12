@@ -15,7 +15,7 @@ Each has its own README with the full picture (architecture, project layout, run
 ./dev.sh
 ```
 
-Requires Docker, Go 1.25+, and [pnpm](https://pnpm.io). This one script:
+Requires Docker, Go 1.25+, Node.js, and [pnpm](https://pnpm.io). The script checks for all four up front and fails with a clear message if one's missing. This one script:
 
 1. Starts Postgres in Docker (creating `api/.env` with local dev defaults if it isn't there yet).
 2. Waits for it to accept connections.

@@ -24,7 +24,17 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 if ! docker info >/dev/null 2>&1; then
-  echo "Docker isn't running. Start Docker Desktop and try again." >&2
+  echo "Docker isn't running (or isn't installed). Install/start Docker Desktop and try again." >&2
+  exit 1
+fi
+
+if ! command -v go >/dev/null 2>&1; then
+  echo "Go isn't installed. Install Go 1.25+ (https://go.dev/dl/) and try again." >&2
+  exit 1
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "Node.js isn't installed. Install it (needed by pnpm/vite) and try again." >&2
   exit 1
 fi
 
