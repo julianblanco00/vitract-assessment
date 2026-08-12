@@ -48,3 +48,9 @@ Nothing here needs infrastructure beyond what the deployment above already sets 
 - **Alerting**: all of the above alarms publish to an SNS topic, fanned out to email/Slack for the on-call.
 
 What's deliberately *not* built: a `/metrics` endpoint or a dedicated heartbeat table. The structured logs already carry everything CloudWatch needs, so adding either would be duplicating state that already exists, just to have a nicer query interface than log-based metric filters — a reasonable thing to add later if CloudWatch's query ergonomics become the bottleneck, not before.
+
+## What's not finished, and why
+
+- **Authentication.** There's no login — the dashboard is open by design for this assignment ("something simple, no logins" was an explicit scope decision, not an oversight). For a real deployment I'd add **AWS Cognito**, to stay consistent with the rest of the AWS-based stack.
+- **Multiple practitioners.** Every patient is assigned to a single seeded "house" practitioner today (a documented assumption, since the provided roster has no practitioner column). Real support for multiple practitioners — assigning patients to specific ones, and scoping what each practitioner can see — isn't built yet.
+- **Filters on the patients view.** The dashboard lists all patients (paginated) with no way to search or narrow the list yet.
