@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 	"vitract-assessment/packages/ingestion"
 	"vitract-assessment/packages/models"
@@ -30,10 +30,12 @@ func New(db *gorm.DB, registry *ingestion.Registry, notifier notification.Notifi
 }
 
 func (w *Worker) Run(interval time.Duration) {
+	slog.Info("worker started", "poll_interval", interval.String())
+
 	for {
 		job, err := w.claimNextJob()
 		if err != nil {
-			log.Printf("error claiming job: %v", err)
+			slog.Error("failed to claim job", "error", err)
 			time.Sleep(interval)
 			continue
 		}
@@ -43,7 +45,7 @@ func (w *Worker) Run(interval time.Duration) {
 			continue
 		}
 
-		w.processJob(job)
+		w.processJobSafely(job)
 	}
 }
 
@@ -73,6 +75,16 @@ func (w *Worker) claimNextJob() (*models.SampleProcessingJob, error) {
 	}
 
 	return &job, nil
+}
+
+func (w *Worker) processJobSafely(job *models.SampleProcessingJob) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("job panicked", "job_id", job.ID, "source_ref", job.SourceRef, "panic", r)
+			w.markFailed(job, fmt.Sprintf("internal error: %v", r))
+		}
+	}()
+	w.processJob(job)
 }
 
 func (w *Worker) processJob(job *models.SampleProcessingJob) {
@@ -142,6 +154,8 @@ func (w *Worker) processJob(job *models.SampleProcessingJob) {
 		return
 	}
 
+	slog.Info("job succeeded", "job_id", job.ID, "sample_id", sample.SampleID, "score", sample.DiversityScore)
+
 	w.notifyPractitioner(&sample)
 }
 
@@ -150,7 +164,7 @@ func (w *Worker) markFailed(job *models.SampleProcessingJob, reason string) {
 	job.Error = reason
 	job.FinishedAt = time.Now()
 	w.db.Save(job)
-	log.Printf("job %d failed: %s", job.ID, reason)
+	slog.Warn("job failed", "job_id", job.ID, "source_ref", job.SourceRef, "reason", reason)
 }
 
 func (w *Worker) markIngestionFailure(job *models.SampleProcessingJob, data *ingestion.SampleData, reason string) {
@@ -162,7 +176,7 @@ func (w *Worker) markIngestionFailure(job *models.SampleProcessingJob, data *ing
 		Reason:       reason,
 	}
 	if err := w.db.Create(&failure).Error; err != nil {
-		log.Printf("failed to record ingestion failure for job %d: %v", job.ID, err)
+		slog.Error("failed to record ingestion failure", "job_id", job.ID, "error", err)
 	}
 	w.markFailed(job, reason)
 }
@@ -170,7 +184,7 @@ func (w *Worker) markIngestionFailure(job *models.SampleProcessingJob, data *ing
 func (w *Worker) notifyPractitioner(sample *models.Sample) {
 	var patient models.Patient
 	if err := w.db.Preload("Practitioner").First(&patient, "id = ?", sample.PatientID).Error; err != nil {
-		log.Printf("failed to load patient for notification: %v", err)
+		slog.Error("failed to load patient for notification", "sample_id", sample.SampleID, "error", err)
 		return
 	}
 
@@ -180,6 +194,6 @@ func (w *Worker) notifyPractitioner(sample *models.Sample) {
 		DiversityScore: sample.DiversityScore,
 	})
 	if err != nil {
-		log.Printf("failed to notify practitioner: %v", err)
+		slog.Error("failed to notify practitioner", "sample_id", sample.SampleID, "error", err)
 	}
 }

@@ -2,7 +2,8 @@ package main
 
 import (
 	"flag"
-	"log"
+	"log/slog"
+	"os"
 
 	"vitract-assessment/packages/database"
 	"vitract-assessment/packages/ingestion"
@@ -12,6 +13,8 @@ import (
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
 	samplesDir := flag.String("samples", "./data/samples", "directory of lab result JSON files")
 	flag.Parse()
 
@@ -19,12 +22,14 @@ func main() {
 
 	db, err := database.Connect()
 	if err != nil {
-		log.Fatalf("failed to connect to database: %v", err)
+		slog.Error("failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 
 	enqueued, skipped, err := intake.EnqueueSamples(db, string(ingestion.SourceLocalFile), *samplesDir)
 	if err != nil {
-		log.Fatalf("sample ingestion failed: %v", err)
+		slog.Error("sample ingestion failed", "error", err)
+		os.Exit(1)
 	}
-	log.Printf("samples enqueued: %d new, %d skipped (already known)", enqueued, skipped)
+	slog.Info("samples enqueued", "new", enqueued, "skipped", skipped)
 }

@@ -1,8 +1,9 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"time"
 	"vitract-assessment/packages/api"
 	"vitract-assessment/packages/database"
@@ -14,11 +15,13 @@ import (
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	godotenv.Load()
 
 	db, err := database.Connect()
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 
 	registry := ingestion.NewRegistry()
@@ -27,6 +30,10 @@ func main() {
 	w := worker.New(db, registry, &notification.LogNotifier{})
 	go w.Run(2 * time.Second)
 
-	log.Println("listening on :8080")
-	log.Fatal(http.ListenAndServe(":8080", api.NewRouter(db)))
+	const addr = ":8080"
+	slog.Info("starting server", "addr", addr)
+	if err := http.ListenAndServe(addr, api.NewRouter(db)); err != nil {
+		slog.Error("server stopped", "error", err)
+		os.Exit(1)
+	}
 }

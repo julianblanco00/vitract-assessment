@@ -1,7 +1,8 @@
 package main
 
 import (
-	"log"
+	"log/slog"
+	"os"
 
 	"vitract-assessment/packages/database"
 	"vitract-assessment/packages/migrations"
@@ -10,16 +11,19 @@ import (
 )
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	godotenv.Load()
 
 	db, err := database.Connect()
 	if err != nil {
-		log.Fatalf("failed to connect to database: %v", err)
+		slog.Error("failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 
 	if err := migrations.Run(db); err != nil {
-		log.Fatalf("migrations failed: %v", err)
+		slog.Error("migrations failed", "error", err)
+		os.Exit(1)
 	}
 
-	log.Println("migrations applied")
+	slog.Info("migrations applied")
 }
