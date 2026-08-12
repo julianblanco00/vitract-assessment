@@ -18,6 +18,11 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "pnpm isn't installed. Install it (e.g. 'npm install -g pnpm') and try again." >&2
+  exit 1
+fi
+
 if [[ ! -f "$API_DIR/.env" ]]; then
   cat > "$API_DIR/.env" <<EOF
 DB_HOST=localhost
@@ -47,7 +52,7 @@ echo "Registering lab result files..."
 
 if [[ ! -d "$DASHBOARD_DIR/node_modules" ]]; then
   echo "Installing dashboard dependencies..."
-  (cd "$DASHBOARD_DIR" && npm install)
+  (cd "$DASHBOARD_DIR" && pnpm install)
 fi
 
 echo "Starting API on :8080..."
@@ -55,7 +60,7 @@ echo "Starting API on :8080..."
 API_PID=$!
 
 echo "Starting dashboard on :5173..."
-(cd "$DASHBOARD_DIR" && npm run dev) &
+(cd "$DASHBOARD_DIR" && pnpm run dev) &
 DASHBOARD_PID=$!
 
 echo ""

@@ -13,11 +13,11 @@ It's a plain client-rendered React app — no login, no write operations, just r
 
 ## Running it
 
-**Requirements:** Node 18+, and the [API](../api) running locally on `:8080`.
+**Requirements:** Node 18+, [pnpm](https://pnpm.io), and the [API](../api) running locally on `:8080`.
 
 ```
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 Opens on `http://localhost:5173`. If the API isn't on `http://localhost:8080`, point the dashboard at it with a `.env` file:
@@ -29,5 +29,5 @@ VITE_API_URL=http://your-api-host:port
 ### Build
 
 ```
-npm run build
+pnpm run build
 ```
