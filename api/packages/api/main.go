@@ -21,7 +21,15 @@ func NewRouter(db *gorm.DB) http.Handler {
 	mux.HandleFunc("GET /patients", h.listPatients)
 	mux.HandleFunc("GET /samples", h.listSamples)
 	mux.HandleFunc("GET /samples/{id}", h.getSample)
-	return mux
+	return withCORS(mux)
+}
+
+func withCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
