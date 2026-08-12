@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"strings"
 	"testing"
 
 	"vitract-assessment/packages/dbtest"
@@ -13,11 +14,15 @@ import (
 )
 
 type fakeSource struct {
-	data map[string]*ingestion.SampleData
-	err  map[string]error
+	data   map[string]*ingestion.SampleData
+	err    map[string]error
+	panics map[string]any
 }
 
 func (f *fakeSource) Fetch(ctx context.Context, ref string) (*ingestion.SampleData, error) {
+	if p, ok := f.panics[ref]; ok {
+		panic(p)
+	}
 	if err, ok := f.err[ref]; ok {
 		return nil, err
 	}
@@ -176,6 +181,87 @@ func TestProcessJob_FetchError(t *testing.T) {
 	db.Model(&models.IngestionFailure{}).Count(&count)
 	if count != 0 {
 		t.Errorf("expected no ingestion_failure rows for a technical failure, got %d", count)
+	}
+}
+
+func TestProcessJobSafely_RecoversFromPanic(t *testing.T) {
+	db := dbtest.New(t)
+
+	job := models.SampleProcessingJob{Status: string(models.StatusPending), Source: "local_file", SourceRef: "panics.json"}
+	if err := db.Create(&job).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	source := &fakeSource{panics: map[string]any{"panics.json": "boom"}}
+	w := New(db, newRegistry(source), &fakeNotifier{})
+
+	w.processJobSafely(&job)
+
+	var updated models.SampleProcessingJob
+	if err := db.First(&updated, job.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if updated.Status != string(models.StatusFailed) {
+		t.Fatalf("status = %q, want failed", updated.Status)
+	}
+	if updated.SampleID != nil {
+		t.Error("expected SampleID to remain nil")
+	}
+	if !strings.Contains(updated.Error, "boom") {
+		t.Errorf("error = %q, want it to mention the panic value", updated.Error)
+	}
+}
+
+func TestProcessJobSafely_ContinuesAfterPanic(t *testing.T) {
+	db := dbtest.New(t)
+
+	practitioner := models.Practitioner{Name: "Dr. Test", Email: "dr2@test.local"}
+	if err := db.Create(&practitioner).Error; err != nil {
+		t.Fatal(err)
+	}
+	patient := models.Patient{PatientID: "P002", Name: "John Roe", Email: "john@test.local", PractitionerID: practitioner.ID}
+	if err := db.Create(&patient).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	panicking := models.SampleProcessingJob{Status: string(models.StatusPending), Source: "local_file", SourceRef: "panics.json"}
+	if err := db.Create(&panicking).Error; err != nil {
+		t.Fatal(err)
+	}
+	ok := models.SampleProcessingJob{Status: string(models.StatusPending), Source: "local_file", SourceRef: "ok.json"}
+	if err := db.Create(&ok).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	source := &fakeSource{
+		panics: map[string]any{"panics.json": "boom"},
+		data: map[string]*ingestion.SampleData{
+			"ok.json": {
+				SampleID:      "S2001",
+				PatientID:     "P002",
+				CollectedDate: "2026-01-02",
+				Taxa:          []ingestion.TaxonData{{Name: "X", Abundance: 1}},
+			},
+		},
+	}
+	w := New(db, newRegistry(source), &fakeNotifier{})
+
+	w.processJobSafely(&panicking)
+	w.processJobSafely(&ok)
+
+	var updatedPanicking, updatedOK models.SampleProcessingJob
+	if err := db.First(&updatedPanicking, panicking.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&updatedOK, ok.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if updatedPanicking.Status != string(models.StatusFailed) {
+		t.Errorf("panicking job status = %q, want failed", updatedPanicking.Status)
+	}
+	if updatedOK.Status != string(models.StatusSuccess) {
+		t.Errorf("second job status = %q, want success (error: %s)", updatedOK.Status, updatedOK.Error)
 	}
 }
 
