@@ -37,3 +37,14 @@ See [`api/README.md`](api/README.md) and [`dashboard/README.md`](dashboard/READM
 - **Dashboard**: a static build (`pnpm run build`), deployed separately to S3 + CloudFront, pointed at the API via `VITE_API_URL`.
 - **Database**: managed Postgres (RDS) instead of self-hosted; config/secrets as env vars, never `.env`.
 - **Infrastructure**: Terraform, in an `infra/` directory in this repo, with state in a remote backend (S3 + lock table) — it defines the VPC, RDS, ECS cluster/services, ALB, ECR, the S3+CloudFront setup for the dashboard, and IAM/Secrets Manager. Infra changes (`terraform plan`/`apply`) run as their own gated CI job, separate from the app deploy pipeline that builds/pushes the image and rolls out a new ECS task definition — so shipping a new app version doesn't require a full Terraform run each time.
+
+## Monitoring
+
+Nothing here needs infrastructure beyond what the deployment above already sets up — Fargate ships every container's stdout to CloudWatch Logs automatically, and our logs are already structured JSON (`log/slog`), so CloudWatch can act on them directly without a separate monitoring stack:
+
+- **API up/down**: the ALB's target group already tracks `HealthyHostCount` against `GET /health` (which itself checks DB connectivity, not just that the process is running). An alarm on that metric covers "the API is down or can't reach the database."
+- **Worker alive**: the worker has no HTTP endpoint of its own to poll (it's a pure background loop), so it emits a `"msg":"heartbeat"` log line every 30s instead. A CloudWatch Logs metric filter turns those lines into a metric, and an alarm with `TreatMissingData: breaching` fires if no heartbeat shows up for a few minutes — that's how a wedged or crashed worker gets caught, since the API's own health check can't see it (they're separate ECS services).
+- **Failure rate**: `"level":"WARN","msg":"job failed"` and `"level":"ERROR","msg":"job panicked"` are both metric-filterable the same way — alarm when either crosses a threshold in a 5-minute window.
+- **Alerting**: all of the above alarms publish to an SNS topic, fanned out to email/Slack for the on-call.
+
+What's deliberately *not* built: a `/metrics` endpoint or a dedicated heartbeat table. The structured logs already carry everything CloudWatch needs, so adding either would be duplicating state that already exists, just to have a nicer query interface than log-based metric filters — a reasonable thing to add later if CloudWatch's query ergonomics become the bottleneck, not before.

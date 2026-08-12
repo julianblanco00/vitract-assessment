@@ -24,6 +24,8 @@ Ingestion never runs inline in a request — a file being registered and a file 
 
 **Notifications** are a logged stub (`packages/notification`) standing in for a real email provider. A failed notification doesn't undo an already-computed result — it's just logged.
 
+**Operability.** `GET /health` checks DB connectivity for the API process. The worker has no HTTP endpoint of its own (it's a background loop, not a server), so it logs a `"msg":"heartbeat"` line every 30s instead — since the worker runs as its own ECS service, that's what lets monitoring notice it stalled even though the API's health check is still green. All logging is structured JSON via `log/slog`, and a panic while processing one job is recovered and fails just that job (`processJobSafely`) instead of taking the whole worker down. See the root README's Monitoring section for how these get turned into alerts.
+
 ## Project layout
 
 ```
