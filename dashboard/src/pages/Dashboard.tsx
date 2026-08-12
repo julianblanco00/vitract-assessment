@@ -32,12 +32,6 @@ function groupByPatient(patients: Patient[], samples: SampleListItem[]) {
   return { groups: [...byPatientId.values()], unmatched };
 }
 
-function isSupersededDelivery(samples: SampleListItem[], index: number): boolean {
-  const current = samples[index];
-  if (!current.sample_id) return false;
-  return samples.some((s, i) => i < index && s.sample_id === current.sample_id);
-}
-
 export default function Dashboard() {
   const patientsQuery = useQuery({ queryKey: ["patients"], queryFn: getPatients });
   const samplesQuery = useQuery({ queryKey: ["samples"], queryFn: getSamples });
@@ -77,14 +71,11 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {samples.map((sample, i) => (
+                {samples.map((sample) => (
                   <tr key={sample.job_id}>
                     <td>{sample.sample_id ?? sample.source_ref}</td>
                     <td>
                       <StatusBadge status={sample.status} />
-                      {isSupersededDelivery(samples, i) && (
-                        <span className="previous-version-tag">previous version</span>
-                      )}
                     </td>
                     <td>{sample.collected_date ?? "—"}</td>
                     <td>{sample.diversity_score?.toFixed(4) ?? "—"}</td>

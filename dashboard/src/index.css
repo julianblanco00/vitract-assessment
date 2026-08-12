@@ -126,13 +126,6 @@ a:hover {
   color: #b91c1c;
 }
 
-.previous-version-tag {
-  margin-left: 0.5rem;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  font-style: italic;
-}
-
 .detail-grid {
   display: grid;
   grid-template-columns: max-content 1fr;

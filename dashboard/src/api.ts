@@ -22,3 +22,7 @@ export function getSamples(): Promise<SampleListItem[]> {
 export function getSample(jobId: number | string): Promise<SampleDetail> {
   return get(`/samples/${jobId}`);
 }
+
+export function getSampleVersions(jobId: number | string): Promise<SampleListItem[]> {
+  return get(`/samples/${jobId}/versions`);
+}

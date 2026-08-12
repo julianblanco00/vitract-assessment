@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
-import { getSample } from "../api";
+import { getSample, getSampleVersions } from "../api";
 import StatusBadge from "../components/StatusBadge";
 
 export default function SampleDetail() {
@@ -11,6 +11,14 @@ export default function SampleDetail() {
     queryFn: () => getSample(jobId!),
     enabled: !!jobId,
   });
+
+  const versionsQuery = useQuery({
+    queryKey: ["samples", jobId, "versions"],
+    queryFn: () => getSampleVersions(jobId!),
+    enabled: !!jobId,
+  });
+
+  const previousVersions = versionsQuery.data ?? [];
 
   return (
     <div>
@@ -29,6 +37,12 @@ export default function SampleDetail() {
           <p className="patient-meta">
             <StatusBadge status={sampleQuery.data.status} /> · source file: {sampleQuery.data.source_ref}
           </p>
+
+          {sampleQuery.data.latest_job_id && (
+            <p className="patient-meta">
+              This is a previous version. <Link to={`/samples/${sampleQuery.data.latest_job_id}`}>View the latest version →</Link>
+            </p>
+          )}
 
           {sampleQuery.data.status === "failed" && (
             <p className="state-message error">{sampleQuery.data.error}</p>
@@ -71,6 +85,36 @@ export default function SampleDetail() {
 
           {(sampleQuery.data.status === "pending" || sampleQuery.data.status === "processing") && (
             <p className="state-message">This sample hasn't finished processing yet.</p>
+          )}
+
+          {previousVersions.length > 0 && (
+            <>
+              <h2>Previous versions</h2>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Collected</th>
+                    <th>Diversity score</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {previousVersions.map((version) => (
+                    <tr key={version.job_id}>
+                      <td>
+                        <StatusBadge status={version.status} />
+                      </td>
+                      <td>{version.collected_date ?? "—"}</td>
+                      <td>{version.diversity_score?.toFixed(4) ?? "—"}</td>
+                      <td>
+                        <Link to={`/samples/${version.job_id}`}>View</Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
           )}
         </div>
       )}

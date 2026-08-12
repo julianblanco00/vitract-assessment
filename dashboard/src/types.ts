@@ -40,4 +40,5 @@ export interface SampleDetail {
   collected_date?: string;
   diversity_score?: number;
   taxa?: Taxon[];
+  latest_job_id?: number;
 }
