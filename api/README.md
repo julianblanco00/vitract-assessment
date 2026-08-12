@@ -48,6 +48,8 @@ data/                  the provided patient roster + sample files
 
 **Requirements:** Go 1.25+, Docker.
 
+The quickest way to get everything running (Postgres, migrations, ingest, this API, and the dashboard) is `../dev.sh` from the repo root. The steps below are what it automates, useful for running things individually or understanding what's happening.
+
 1. Start Postgres:
    ```
    docker compose up -d
