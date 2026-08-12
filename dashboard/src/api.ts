@@ -1,4 +1,4 @@
-import type { Patient, SampleDetail, SampleListItem } from "./types";
+import type { PaginatedResponse, Patient, SampleDetail, SampleListItem } from "./types";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
 
@@ -11,12 +11,8 @@ async function get<T>(path: string): Promise<T> {
 	return res.json();
 }
 
-export function getPatients(): Promise<Patient[]> {
-	return get("/patients");
-}
-
-export function getSamples(): Promise<SampleListItem[]> {
-	return get("/samples");
+export function getPatients(page = 1, pageSize = 20): Promise<PaginatedResponse<Patient>> {
+	return get(`/patients?page=${page}&page_size=${pageSize}`);
 }
 
 export function getSample(jobId: number | string): Promise<SampleDetail> {
