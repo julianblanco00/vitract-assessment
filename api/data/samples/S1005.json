@@ -1,0 +1,13 @@
+{
+  "sample_id": "S1005",
+  "patient_id": "P002",
+  "sequencing_type": "16S",
+  "collected_date": "2026-05-06",
+  "taxa": [
+    { "name": "Bacteroides", "abundance": 0.20 },
+    { "name": "Faecalibacterium", "abundance": 0.20 },
+    { "name": "Prevotella", "abundance": 0.20 },
+    { "name": "Akkermansia", "abundance": 0.20 },
+    { "name": "Roseburia", "abundance": 0.20 }
+  ]
+}

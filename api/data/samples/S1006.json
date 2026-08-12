@@ -1,0 +1,8 @@
+{
+  "sample_id": "S1006",
+  "patient_id": "P003",
+  "sequencing_type": "16S",
+  "collected_date": "2026-05-06",
+  "taxa": [
+    { "name": "Bacteroides", "abundance": 0.50 },
+    { "name": "Prevotella", "abundance":

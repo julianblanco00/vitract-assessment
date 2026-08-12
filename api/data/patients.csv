@@ -1,0 +1,4 @@
+patient_id,name,date_of_birth,email
+P001,Margaret Chen,1979-03-12,margaret.chen@example.com
+P002,Daniel Okafor,1990-07-22,daniel.okafor@example.com
+P003,Sofia Russo,1985-11-30,sofia.russo@example.com

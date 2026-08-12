@@ -1,0 +1,12 @@
+{
+  "sample_id": "S1004",
+  "patient_id": "P001",
+  "sequencing_type": "shotgun",
+  "collected_date": "2026-05-05",
+  "taxa": [
+    { "name": "Bacteroides", "abundance": 0.70 },
+    { "name": "Escherichia", "abundance": 0.15 },
+    { "name": "Bifidobacterium", "abundance": 0.10 },
+    { "name": "Lactobacillus", "abundance": 0.05 }
+  ]
+}

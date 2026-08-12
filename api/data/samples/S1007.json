@@ -1,0 +1,11 @@
+{
+  "sample_id": "S1007",
+  "patient_id": "P999",
+  "sequencing_type": "shotgun",
+  "collected_date": "2026-05-07",
+  "taxa": [
+    { "name": "Bacteroides", "abundance": 0.50 },
+    { "name": "Prevotella", "abundance": 0.30 },
+    { "name": "Bifidobacterium", "abundance": 0.20 }
+  ]
+}
