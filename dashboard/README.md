@@ -1,32 +1,33 @@
-# React + TypeScript + Vite
+# Vitract Lab Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+A small dashboard for the Vitract Lab API: a list of patients and their samples with processing status, and a detail view with the diversity score and per-taxon breakdown.
 
-Currently, two official plugins are available:
+## What it does
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Dashboard** (`/`) — every patient with their samples, each showing its processing status (`pending`/`processing`/`success`/`failed`), collected date, and diversity score once available. If a sample was delivered more than once (same `sample_id`, a newer file), older deliveries are shown tagged as a previous version instead of being hidden. Files that couldn't be matched to any patient (e.g. an unknown `patient_id`) are listed separately, with their error.
+- **Sample detail** (`/samples/:jobId`) — patient, sequencing type, collected date, the diversity score, and the full taxa/abundance breakdown for a successfully processed sample; the failure reason for one that isn't.
 
-## React Compiler
+## How it works
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+It's a plain client-rendered React app — no login, no write operations, just reading from the API. `src/api.ts` is a small typed fetch client for the three read endpoints (`/patients`, `/samples`, `/samples/:id`); `src/types.ts` mirrors the API's JSON response shapes. The dashboard page fetches patients and samples separately and groups samples under their patient client-side by matching `patient_id`, rather than the API doing that shaping server-side.
 
-## Expanding the Oxlint configuration
+## Running it
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+**Requirements:** Node 18+, and the [API](../api) running locally on `:8080`.
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Opens on `http://localhost:5173`. If the API isn't on `http://localhost:8080`, point the dashboard at it with a `.env` file:
+
+```
+VITE_API_URL=http://your-api-host:port
+```
+
+### Build
+
+```
+npm run build
+```
