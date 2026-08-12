@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vitract
+      POSTGRES_PASSWORD: vitract
+      POSTGRES_DB: vitract
+    ports:
+      - "5433:5432"
+    volumes:
+      - vitract-db-data:/var/lib/postgresql/data
+
+volumes:
+  vitract-db-data:
