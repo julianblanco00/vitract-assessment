@@ -58,25 +58,83 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 type PatientResponse struct {
-	ID                uint   `json:"id"`
-	PatientID         string `json:"patient_id"`
-	Name              string `json:"name"`
-	Email             string `json:"email"`
-	Birthday          string `json:"birthday"`
-	PractitionerName  string `json:"practitioner_name"`
-	PractitionerEmail string `json:"practitioner_email"`
+	ID                uint             `json:"id"`
+	PatientID         string           `json:"patient_id"`
+	Name              string           `json:"name"`
+	Email             string           `json:"email"`
+	Birthday          string           `json:"birthday"`
+	PractitionerName  string           `json:"practitioner_name"`
+	PractitionerEmail string           `json:"practitioner_email"`
+	Samples           []SampleListItem `json:"samples"`
+}
+
+const (
+	defaultPageSize = 20
+	maxPageSize     = 100
+)
+
+type PaginatedResponse[T any] struct {
+	Items      []T   `json:"items"`
+	Page       int   `json:"page"`
+	PageSize   int   `json:"page_size"`
+	TotalItems int64 `json:"total_items"`
+	TotalPages int   `json:"total_pages"`
+}
+
+func parsePagination(r *http.Request) (page, pageSize int) {
+	page = 1
+	if v, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && v > 0 {
+		page = v
+	}
+
+	pageSize = defaultPageSize
+	if v, err := strconv.Atoi(r.URL.Query().Get("page_size")); err == nil && v > 0 && v <= maxPageSize {
+		pageSize = v
+	}
+
+	return page, pageSize
+}
+
+func totalPages(totalItems int64, pageSize int) int {
+	if totalItems == 0 {
+		return 1
+	}
+	return int((totalItems + int64(pageSize) - 1) / int64(pageSize))
 }
 
 func (h *handler) listPatients(w http.ResponseWriter, r *http.Request) {
-	var patients []models.Patient
-	if err := h.db.Preload("Practitioner").Order("patients.id").Find(&patients).Error; err != nil {
+	page, pageSize := parsePagination(r)
+
+	var total int64
+	if err := h.db.Model(&models.Patient{}).Count(&total).Error; err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	resp := make([]PatientResponse, len(patients))
+	var patients []models.Patient
+	err := h.db.Preload("Practitioner").
+		Order("patients.id").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&patients).Error
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	patientDBIDs := make([]uint, len(patients))
 	for i, p := range patients {
-		resp[i] = PatientResponse{
+		patientDBIDs[i] = p.ID
+	}
+	samplesByPatient, err := h.samplesForPatients(patientDBIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	items := make([]PatientResponse, len(patients))
+	for i, p := range patients {
+		items[i] = PatientResponse{
 			ID:                p.ID,
 			PatientID:         p.PatientID,
 			Name:              p.Name,
@@ -84,9 +142,48 @@ func (h *handler) listPatients(w http.ResponseWriter, r *http.Request) {
 			Birthday:          p.Birthday.UTC().Format("2006-01-02"),
 			PractitionerName:  p.Practitioner.Name,
 			PractitionerEmail: p.Practitioner.Email,
+			Samples:           samplesByPatient[p.PatientID],
 		}
 	}
-	writeJSON(w, http.StatusOK, resp)
+
+	writeJSON(w, http.StatusOK, PaginatedResponse[PatientResponse]{
+		Items:      items,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalItems: total,
+		TotalPages: totalPages(total, pageSize),
+	})
+}
+
+func (h *handler) samplesForPatients(patientDBIDs []uint) (map[string][]SampleListItem, error) {
+	byPatient := make(map[string][]SampleListItem)
+	if len(patientDBIDs) == 0 {
+		return byPatient, nil
+	}
+
+	var rows []sampleRow
+	err := sampleRowsQuery(h.db).
+		Where("sample.patient_id IN ?", patientDBIDs).
+		Where(`job.id IN (
+			SELECT DISTINCT ON (s2.sample_id) j2.id
+			FROM sample_processing_jobs j2
+			JOIN samples s2 ON s2.id = j2.sample_id AND s2.deleted_at IS NULL
+			WHERE j2.deleted_at IS NULL
+			ORDER BY s2.sample_id, j2.created_at DESC
+		)`).
+		Order("job.created_at DESC").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	for _, item := range toSampleListItems(rows) {
+		if item.PatientID == nil {
+			continue
+		}
+		byPatient[*item.PatientID] = append(byPatient[*item.PatientID], item)
+	}
+	return byPatient, nil
 }
 
 type SampleListItem struct {

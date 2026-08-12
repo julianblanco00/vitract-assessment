@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -128,19 +129,144 @@ func TestListPatients(t *testing.T) {
 	srv := httptest.NewServer(api.NewRouter(db))
 	defer srv.Close()
 
-	var got []api.PatientResponse
+	var got api.PaginatedResponse[api.PatientResponse]
 	resp := getJSON(t, srv.URL+"/patients", &got)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
-	if len(got) != 1 {
-		t.Fatalf("got %d patients, want 1", len(got))
+	if len(got.Items) != 1 {
+		t.Fatalf("got %d patients, want 1", len(got.Items))
 	}
-	if got[0].PatientID != "P001" || got[0].Birthday != "1980-01-15" {
-		t.Errorf("unexpected patient: %+v", got[0])
+	if got.Items[0].PatientID != "P001" || got.Items[0].Birthday != "1980-01-15" {
+		t.Errorf("unexpected patient: %+v", got.Items[0])
 	}
-	if got[0].PractitionerName != "Dr. Test" {
-		t.Errorf("practitioner name = %q, want Dr. Test", got[0].PractitionerName)
+	if got.Items[0].PractitionerName != "Dr. Test" {
+		t.Errorf("practitioner name = %q, want Dr. Test", got.Items[0].PractitionerName)
+	}
+	if got.Page != 1 || got.PageSize != 20 || got.TotalItems != 1 || got.TotalPages != 1 {
+		t.Errorf("unexpected pagination metadata: %+v", got)
+	}
+	if len(got.Items[0].Samples) != 1 || got.Items[0].Samples[0].SourceRef != "S1001.json" {
+		t.Errorf("unexpected embedded samples: %+v", got.Items[0].Samples)
+	}
+}
+
+func TestListPatients_SamplesDontLeakAcrossPatients(t *testing.T) {
+	db := dbtest.New(t)
+	seedData(t, db)       // P001, with sample S1001.json
+	seedRedelivery(t, db) // another delivery of S1001 for P001
+
+	practitioner := models.Practitioner{Name: "Dr. Test 2", Email: "dr2@test.local"}
+	if err := db.Create(&practitioner).Error; err != nil {
+		t.Fatal(err)
+	}
+	otherPatient := models.Patient{
+		PatientID:      "P002",
+		Name:           "John Roe",
+		Email:          "john@test.local",
+		Birthday:       time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC),
+		PractitionerID: practitioner.ID,
+	}
+	if err := db.Create(&otherPatient).Error; err != nil {
+		t.Fatal(err)
+	}
+	otherSample := models.Sample{
+		SampleID:       "S2001",
+		PatientID:      otherPatient.ID,
+		SequencingType: "16S",
+		CollectedDate:  time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		DiversityScore: 2.0,
+	}
+	if err := db.Create(&otherSample).Error; err != nil {
+		t.Fatal(err)
+	}
+	otherJob := models.SampleProcessingJob{SampleID: &otherSample.ID, Status: string(models.StatusSuccess), Source: "local_file", SourceRef: "S2001.json"}
+	if err := db.Create(&otherJob).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(api.NewRouter(db))
+	defer srv.Close()
+
+	var got api.PaginatedResponse[api.PatientResponse]
+	resp := getJSON(t, srv.URL+"/patients?page_size=10", &got)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if len(got.Items) != 2 {
+		t.Fatalf("got %d patients, want 2", len(got.Items))
+	}
+
+	byPatientID := map[string]api.PatientResponse{}
+	for _, p := range got.Items {
+		byPatientID[p.PatientID] = p
+	}
+
+	p001 := byPatientID["P001"]
+	if len(p001.Samples) != 1 || p001.Samples[0].SourceRef != "S1001_redelivery.json" {
+		t.Errorf("P001 samples = %+v, want only the latest S1001 delivery", p001.Samples)
+	}
+
+	p002 := byPatientID["P002"]
+	if len(p002.Samples) != 1 || p002.Samples[0].SourceRef != "S2001.json" {
+		t.Errorf("P002 samples = %+v, want only S2001.json", p002.Samples)
+	}
+}
+
+func TestListPatients_Pagination(t *testing.T) {
+	db := dbtest.New(t)
+	seedData(t, db) // seeds P001
+
+	practitioner := models.Practitioner{Name: "Dr. Test 2", Email: "dr2@test.local"}
+	if err := db.Create(&practitioner).Error; err != nil {
+		t.Fatal(err)
+	}
+	for i, patientID := range []string{"P002", "P003", "P004"} {
+		patient := models.Patient{
+			PatientID:      patientID,
+			Name:           fmt.Sprintf("Patient %d", i+2),
+			Email:          fmt.Sprintf("patient%d@test.local", i+2),
+			Birthday:       time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC),
+			PractitionerID: practitioner.ID,
+		}
+		if err := db.Create(&patient).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	srv := httptest.NewServer(api.NewRouter(db))
+	defer srv.Close()
+
+	var page1 api.PaginatedResponse[api.PatientResponse]
+	resp := getJSON(t, srv.URL+"/patients?page=1&page_size=2", &page1)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if len(page1.Items) != 2 {
+		t.Fatalf("got %d items on page 1, want 2", len(page1.Items))
+	}
+	if page1.TotalItems != 4 || page1.TotalPages != 2 || page1.Page != 1 || page1.PageSize != 2 {
+		t.Errorf("unexpected pagination metadata on page 1: %+v", page1)
+	}
+
+	var page2 api.PaginatedResponse[api.PatientResponse]
+	resp = getJSON(t, srv.URL+"/patients?page=2&page_size=2", &page2)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if len(page2.Items) != 2 {
+		t.Fatalf("got %d items on page 2, want 2", len(page2.Items))
+	}
+
+	seen := map[string]bool{}
+	for _, p := range append(page1.Items, page2.Items...) {
+		if seen[p.PatientID] {
+			t.Errorf("patient %s appeared on more than one page", p.PatientID)
+		}
+		seen[p.PatientID] = true
+	}
+	if len(seen) != 4 {
+		t.Errorf("got %d distinct patients across both pages, want 4", len(seen))
 	}
 }
 
