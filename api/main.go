@@ -4,12 +4,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"time"
 	"vitract-assessment/packages/api"
 	"vitract-assessment/packages/database"
-	"vitract-assessment/packages/ingestion"
-	"vitract-assessment/packages/notification"
-	"vitract-assessment/packages/worker"
 
 	"github.com/joho/godotenv"
 )
@@ -23,12 +19,6 @@ func main() {
 		slog.Error("failed to connect to database", "error", err)
 		os.Exit(1)
 	}
-
-	registry := ingestion.NewRegistry()
-	registry.Register(ingestion.SourceLocalFile, &ingestion.LocalFileSource{BaseDir: "./data/samples"})
-
-	w := worker.New(db, registry, &notification.LogNotifier{})
-	go w.Run(2 * time.Second)
 
 	const addr = ":8080"
 	slog.Info("starting server", "addr", addr)
