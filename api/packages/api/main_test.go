@@ -63,6 +63,33 @@ func seedData(t *testing.T, db *gorm.DB) (successJobID uint) {
 	return successJob.ID
 }
 
+func seedRedelivery(t *testing.T, db *gorm.DB) (jobID uint) {
+	t.Helper()
+
+	var patient models.Patient
+	if err := db.Where("patient_id = ?", "P001").First(&patient).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	sample := models.Sample{
+		SampleID:       "S1001",
+		PatientID:      patient.ID,
+		SequencingType: "16S",
+		CollectedDate:  time.Date(2026, 5, 9, 0, 0, 0, 0, time.UTC),
+		DiversityScore: 1.430,
+	}
+	if err := db.Create(&sample).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	job := models.SampleProcessingJob{SampleID: &sample.ID, Status: string(models.StatusSuccess), Source: "local_file", SourceRef: "S1001_redelivery.json"}
+	if err := db.Create(&job).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	return job.ID
+}
+
 func getJSON(t *testing.T, url string, v any) *http.Response {
 	t.Helper()
 	resp, err := http.Get(url)
@@ -164,6 +191,129 @@ func TestListSamples(t *testing.T) {
 	}
 }
 
+func TestListSamples_ExcludesSupersededDeliveries(t *testing.T) {
+	db := dbtest.New(t)
+	seedData(t, db)
+	redeliveryJobID := seedRedelivery(t, db)
+
+	srv := httptest.NewServer(api.NewRouter(db))
+	defer srv.Close()
+
+	var got []api.SampleListItem
+	resp := getJSON(t, srv.URL+"/samples", &got)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d rows, want 2 (latest S1001 delivery + the unmatched failure)", len(got))
+	}
+
+	byRef := map[string]api.SampleListItem{}
+	for _, item := range got {
+		byRef[item.SourceRef] = item
+	}
+
+	if _, ok := byRef["S1001.json"]; ok {
+		t.Error("expected the superseded S1001.json delivery to be excluded from the list")
+	}
+
+	redelivery, ok := byRef["S1001_redelivery.json"]
+	if !ok {
+		t.Fatal("missing S1001_redelivery.json row")
+	}
+	if redelivery.JobID != redeliveryJobID {
+		t.Errorf("job_id = %d, want %d", redelivery.JobID, redeliveryJobID)
+	}
+	if redelivery.CollectedDate == nil || *redelivery.CollectedDate != "2026-05-09" {
+		t.Errorf("collected_date = %v, want 2026-05-09", redelivery.CollectedDate)
+	}
+
+	if _, ok := byRef["bad.json"]; !ok {
+		t.Error("missing bad.json row")
+	}
+}
+
+func TestGetSampleVersions_ReturnsOlderDeliveries(t *testing.T) {
+	db := dbtest.New(t)
+	originalJobID := seedData(t, db)
+	redeliveryJobID := seedRedelivery(t, db)
+
+	srv := httptest.NewServer(api.NewRouter(db))
+	defer srv.Close()
+
+	var versions []api.SampleListItem
+	resp := getJSON(t, srv.URL+"/samples/"+strconv.Itoa(int(redeliveryJobID))+"/versions", &versions)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if len(versions) != 1 {
+		t.Fatalf("got %d versions, want 1", len(versions))
+	}
+	if versions[0].JobID != originalJobID {
+		t.Errorf("job_id = %d, want %d", versions[0].JobID, originalJobID)
+	}
+	if versions[0].SourceRef != "S1001.json" {
+		t.Errorf("source_ref = %q, want S1001.json", versions[0].SourceRef)
+	}
+}
+
+func TestGetSampleVersions_ExcludesNewerDeliveries(t *testing.T) {
+	db := dbtest.New(t)
+	originalJobID := seedData(t, db)
+	seedRedelivery(t, db)
+
+	srv := httptest.NewServer(api.NewRouter(db))
+	defer srv.Close()
+
+	var versions []api.SampleListItem
+	resp := getJSON(t, srv.URL+"/samples/"+strconv.Itoa(int(originalJobID))+"/versions", &versions)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if len(versions) != 0 {
+		t.Errorf("got %d versions, want 0 (the original delivery has no earlier version, only a newer one)", len(versions))
+	}
+}
+
+func TestGetSampleVersions_NoSample(t *testing.T) {
+	db := dbtest.New(t)
+	seedData(t, db)
+
+	var failedJob models.SampleProcessingJob
+	if err := db.Where("source_ref = ?", "bad.json").First(&failedJob).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(api.NewRouter(db))
+	defer srv.Close()
+
+	var versions []api.SampleListItem
+	resp := getJSON(t, srv.URL+"/samples/"+strconv.Itoa(int(failedJob.ID))+"/versions", &versions)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if len(versions) != 0 {
+		t.Errorf("got %d versions, want 0", len(versions))
+	}
+}
+
+func TestGetSampleVersions_NoOtherDeliveries(t *testing.T) {
+	db := dbtest.New(t)
+	successJobID := seedData(t, db)
+
+	srv := httptest.NewServer(api.NewRouter(db))
+	defer srv.Close()
+
+	var versions []api.SampleListItem
+	resp := getJSON(t, srv.URL+"/samples/"+strconv.Itoa(int(successJobID))+"/versions", &versions)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if len(versions) != 0 {
+		t.Errorf("got %d versions, want 0", len(versions))
+	}
+}
+
 func TestGetSample_Success(t *testing.T) {
 	db := dbtest.New(t)
 	successJobID := seedData(t, db)
@@ -181,6 +331,36 @@ func TestGetSample_Success(t *testing.T) {
 	}
 	if len(detail.Taxa) != 1 || detail.Taxa[0].Name != "Bacteroides" {
 		t.Errorf("unexpected taxa: %+v", detail.Taxa)
+	}
+	if detail.LatestJobID != nil {
+		t.Errorf("latest_job_id = %v, want nil (this is the only, and therefore latest, delivery)", detail.LatestJobID)
+	}
+}
+
+func TestGetSample_LatestJobID(t *testing.T) {
+	db := dbtest.New(t)
+	originalJobID := seedData(t, db)
+	redeliveryJobID := seedRedelivery(t, db)
+
+	srv := httptest.NewServer(api.NewRouter(db))
+	defer srv.Close()
+
+	var original api.SampleDetailResponse
+	resp := getJSON(t, srv.URL+"/samples/"+strconv.Itoa(int(originalJobID)), &original)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if original.LatestJobID == nil || *original.LatestJobID != redeliveryJobID {
+		t.Errorf("original.latest_job_id = %v, want %d", original.LatestJobID, redeliveryJobID)
+	}
+
+	var latest api.SampleDetailResponse
+	resp = getJSON(t, srv.URL+"/samples/"+strconv.Itoa(int(redeliveryJobID)), &latest)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if latest.LatestJobID != nil {
+		t.Errorf("latest.latest_job_id = %v, want nil (this already is the latest delivery)", latest.LatestJobID)
 	}
 }
 
