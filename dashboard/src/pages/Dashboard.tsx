@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { getPatients, getSamples } from "../api";
 import type { Patient, SampleListItem } from "../types";
@@ -39,25 +39,18 @@ function isSupersededDelivery(samples: SampleListItem[], index: number): boolean
 }
 
 export default function Dashboard() {
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [samples, setSamples] = useState<SampleListItem[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const patientsQuery = useQuery({ queryKey: ["patients"], queryFn: getPatients });
+  const samplesQuery = useQuery({ queryKey: ["samples"], queryFn: getSamples });
 
-  useEffect(() => {
-    Promise.all([getPatients(), getSamples()])
-      .then(([p, s]) => {
-        setPatients(p);
-        setSamples(s);
-      })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, []);
+  if (patientsQuery.isPending || samplesQuery.isPending) {
+    return <p className="state-message">Loading…</p>;
+  }
+  if (patientsQuery.isError || samplesQuery.isError) {
+    const message = (patientsQuery.error ?? samplesQuery.error) as Error;
+    return <p className="state-message error">Failed to load dashboard: {message.message}</p>;
+  }
 
-  if (loading) return <p className="state-message">Loading…</p>;
-  if (error) return <p className="state-message error">Failed to load dashboard: {error}</p>;
-
-  const { groups, unmatched } = groupByPatient(patients, samples);
+  const { groups, unmatched } = groupByPatient(patientsQuery.data, samplesQuery.data);
 
   return (
     <div>

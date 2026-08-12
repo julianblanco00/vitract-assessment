@@ -1,23 +1,16 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { getSample } from "../api";
-import type { SampleDetail as SampleDetailType } from "../types";
 import StatusBadge from "../components/StatusBadge";
 
 export default function SampleDetail() {
   const { jobId } = useParams<{ jobId: string }>();
-  const [sample, setSample] = useState<SampleDetailType | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!jobId) return;
-    setLoading(true);
-    getSample(jobId)
-      .then(setSample)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [jobId]);
+  const sampleQuery = useQuery({
+    queryKey: ["samples", jobId],
+    queryFn: () => getSample(jobId!),
+    enabled: !!jobId,
+  });
 
   return (
     <div>
@@ -25,33 +18,35 @@ export default function SampleDetail() {
         ← Back to dashboard
       </Link>
 
-      {loading && <p className="state-message">Loading…</p>}
-      {error && <p className="state-message error">Failed to load sample: {error}</p>}
+      {sampleQuery.isPending && <p className="state-message">Loading…</p>}
+      {sampleQuery.isError && (
+        <p className="state-message error">Failed to load sample: {sampleQuery.error.message}</p>
+      )}
 
-      {sample && (
+      {sampleQuery.data && (
         <div className="patient-card">
-          <h1>{sample.sample_id ?? sample.source_ref}</h1>
+          <h1>{sampleQuery.data.sample_id ?? sampleQuery.data.source_ref}</h1>
           <p className="patient-meta">
-            <StatusBadge status={sample.status} /> · source file: {sample.source_ref}
+            <StatusBadge status={sampleQuery.data.status} /> · source file: {sampleQuery.data.source_ref}
           </p>
 
-          {sample.status === "failed" && (
-            <p className="state-message error">{sample.error}</p>
+          {sampleQuery.data.status === "failed" && (
+            <p className="state-message error">{sampleQuery.data.error}</p>
           )}
 
-          {sample.status === "success" && (
+          {sampleQuery.data.status === "success" && (
             <>
               <dl className="detail-grid">
                 <dt>Patient</dt>
                 <dd>
-                  {sample.patient_name} ({sample.patient_id})
+                  {sampleQuery.data.patient_name} ({sampleQuery.data.patient_id})
                 </dd>
                 <dt>Sequencing type</dt>
-                <dd>{sample.sequencing_type}</dd>
+                <dd>{sampleQuery.data.sequencing_type}</dd>
                 <dt>Collected</dt>
-                <dd>{sample.collected_date}</dd>
+                <dd>{sampleQuery.data.collected_date}</dd>
                 <dt>Diversity score (Shannon)</dt>
-                <dd className="score">{sample.diversity_score?.toFixed(4)}</dd>
+                <dd className="score">{sampleQuery.data.diversity_score?.toFixed(4)}</dd>
               </dl>
 
               <h2>Taxa breakdown</h2>
@@ -63,7 +58,7 @@ export default function SampleDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sample.taxa?.map((taxon) => (
+                  {sampleQuery.data.taxa?.map((taxon) => (
                     <tr key={taxon.name}>
                       <td>{taxon.name}</td>
                       <td>{(taxon.abundance * 100).toFixed(1)}%</td>
@@ -74,7 +69,7 @@ export default function SampleDetail() {
             </>
           )}
 
-          {(sample.status === "pending" || sample.status === "processing") && (
+          {(sampleQuery.data.status === "pending" || sampleQuery.data.status === "processing") && (
             <p className="state-message">This sample hasn't finished processing yet.</p>
           )}
         </div>
