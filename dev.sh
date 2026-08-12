@@ -5,11 +5,21 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 API_DIR="$ROOT_DIR/api"
 DASHBOARD_DIR="$ROOT_DIR/dashboard"
 
+kill_tree() {
+  local pid="$1"
+  local child
+  for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+    kill_tree "$child"
+  done
+  kill "$pid" 2>/dev/null || true
+}
+
 cleanup() {
   echo ""
   echo "Stopping..."
-  [[ -n "${API_PID:-}" ]] && kill "$API_PID" 2>/dev/null || true
-  [[ -n "${DASHBOARD_PID:-}" ]] && kill "$DASHBOARD_PID" 2>/dev/null || true
+  [[ -n "${API_PID:-}" ]] && kill_tree "$API_PID"
+  [[ -n "${WORKER_PID:-}" ]] && kill_tree "$WORKER_PID"
+  [[ -n "${DASHBOARD_PID:-}" ]] && kill_tree "$DASHBOARD_PID"
 }
 trap cleanup EXIT INT TERM
 
@@ -59,6 +69,10 @@ echo "Starting API on :8080..."
 (cd "$API_DIR" && go run main.go) &
 API_PID=$!
 
+echo "Starting worker..."
+(cd "$API_DIR" && go run cmd/worker/main.go) &
+WORKER_PID=$!
+
 echo "Starting dashboard on :5173..."
 (cd "$DASHBOARD_DIR" && pnpm run dev) &
 DASHBOARD_PID=$!
@@ -66,6 +80,6 @@ DASHBOARD_PID=$!
 echo ""
 echo "API:       http://localhost:8080"
 echo "Dashboard: http://localhost:5173"
-echo "Press Ctrl+C to stop both."
+echo "Press Ctrl+C to stop all three."
 
 wait
