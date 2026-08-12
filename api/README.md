@@ -24,6 +24,18 @@ Ingestion never runs inline in a request — a file being registered and a file 
 
 **Notifications** are a logged stub (`packages/notification`) standing in for a real email provider. A failed notification doesn't undo an already-computed result — it's just logged.
 
+## Operability
+
+**Health check.** `GET /health` pings the database and returns `200 {"status":"ok"}`, or `503` with the error if it can't reach it — meant for a load balancer or uptime check, not for humans.
+
+**Logging.** Every step of the pipeline (`main.go`, `cmd/migrate`, `cmd/ingest`, the worker) logs structured JSON via the standard library's `log/slog`, one line per event: job claimed/succeeded/failed, ingestion failures, notification failures, server start/stop. That's directly log-aggregator-friendly (CloudWatch, Datadog, Loki, ...) without extra plumbing — filtering on `"level":"WARN"` finds every failed job, for instance.
+
+**Graceful failure handling.** A bad file, an unmatched patient, or a DB hiccup while processing one job fails only that job (`status: failed` + a reason) — it never stops the worker from picking up the next one. The worker loop also recovers from a panic in a single job's processing (`processJobSafely`) so a bug triggered by one specific file can't take the whole process down; since the worker runs as a goroutine inside the same process as the HTTP API, an unrecovered panic there would otherwise kill the API too.
+
+**Deploying it.** Run `cmd/migrate` as a release step before rolling out a new version — not automatically on every boot, so a bad migration can't be triggered by an autoscaling event. The server (`main.go`) runs the worker and the API in the same process for simplicity here; at real scale, the two would split into separate deployments so worker capacity can scale with ingestion volume independently of API traffic. `cmd/ingest` today is triggered manually against a fixed directory (matching this assignment's provided dataset) — in production it'd run on a schedule or be triggered by the actual arrival of a file (an S3 event, a webhook), the same way the paused `POST /samples/upload` idea in the design notes would work. Configuration is env vars (`DB_HOST`, etc.) injected by the platform; `.env` is a local-dev-only convenience, never a deployment mechanism.
+
+**Monitoring it.** Point the load balancer's health check and an external uptime monitor at `GET /health`; alert after a few consecutive failures. Ship the JSON logs to an aggregator and alert on sustained `"msg":"job failed"` or `"msg":"job panicked"` rates. The two numbers worth watching that aren't exposed today: the count of `pending` jobs (a number that only grows means the worker died) and the `ingestion_failures` rate (a spike means bad upstream data, e.g. a roster that's out of sync). Both are one query away (`SampleProcessingJob`/`IngestionFailure` tables) — a natural next step would be a `/metrics` endpoint exposing them for Prometheus-style scraping, not built here since nothing in the current design needs push-based alerting to work.
+
 ## Project layout
 
 ```
