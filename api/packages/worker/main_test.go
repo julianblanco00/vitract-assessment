@@ -265,6 +265,21 @@ func TestProcessJobSafely_ContinuesAfterPanic(t *testing.T) {
 	}
 }
 
+func TestHeartbeat_Throttled(t *testing.T) {
+	w := New(nil, nil, nil)
+
+	w.heartbeat()
+	first := w.lastHeartbeat
+	if first.IsZero() {
+		t.Fatal("expected lastHeartbeat to be set after the first call")
+	}
+
+	w.heartbeat()
+	if w.lastHeartbeat != first {
+		t.Error("expected a second call within heartbeatInterval to be throttled")
+	}
+}
+
 func TestClaimNextJob(t *testing.T) {
 	db := dbtest.New(t)
 	job := models.SampleProcessingJob{Status: string(models.StatusPending), Source: "local_file", SourceRef: "x.json"}

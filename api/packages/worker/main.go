@@ -15,10 +15,13 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+const heartbeatInterval = 30 * time.Second
+
 type Worker struct {
-	db       *gorm.DB
-	registry *ingestion.Registry
-	notifier notification.Notifier
+	db            *gorm.DB
+	registry      *ingestion.Registry
+	notifier      notification.Notifier
+	lastHeartbeat time.Time
 }
 
 func New(db *gorm.DB, registry *ingestion.Registry, notifier notification.Notifier) *Worker {
@@ -33,6 +36,8 @@ func (w *Worker) Run(interval time.Duration) {
 	slog.Info("worker started", "poll_interval", interval.String())
 
 	for {
+		w.heartbeat()
+
 		job, err := w.claimNextJob()
 		if err != nil {
 			slog.Error("failed to claim job", "error", err)
@@ -47,6 +52,14 @@ func (w *Worker) Run(interval time.Duration) {
 
 		w.processJobSafely(job)
 	}
+}
+
+func (w *Worker) heartbeat() {
+	if time.Since(w.lastHeartbeat) < heartbeatInterval {
+		return
+	}
+	w.lastHeartbeat = time.Now()
+	slog.Info("heartbeat")
 }
 
 func (w *Worker) claimNextJob() (*models.SampleProcessingJob, error) {
